@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:restful-booker.herokuapp.com)",
+      "Bash(pip install:*)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(.venv/bin/python3 --version)",
+      "Read(//usr/local/bin/**)",
+      "Bash(brew list:*)",
+      "Bash(python3.13 --version)",
+      "Bash(/opt/homebrew/bin/python3.13 --version)",
+      "Bash(/opt/homebrew/bin/python3.13 -m venv .venv)",
+      "Bash(.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000/bookings/)",
+      "Bash(curl -s http://localhost:8000/bookings/1)",
+      "Bash(curl -s -X POST http://localhost:8000/bookings/ -H 'Content-Type: application/json' -d '{:*)",
+      "Bash(curl -s -X PUT http://localhost:8000/bookings/1311 -H 'Content-Type: application/json' -d '{:*)",
+      "Bash(curl -s -X PATCH http://localhost:8000/bookings/1311 -H 'Content-Type: application/json' -d '{\"totalprice\": 999}')",
+      "Bash(curl -s -o /dev/null -w 'HTTP %{http_code}' -X DELETE http://localhost:8000/bookings/1311)"
+    ]
+  }
+}
