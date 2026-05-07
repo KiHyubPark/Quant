@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import booking
+from app.presentation.booking import router as booking
 
 app = FastAPI(
     title="Restful Booker CRUD",
