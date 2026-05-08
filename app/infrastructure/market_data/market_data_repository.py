@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Optional
 
+import FinanceDataReader as fdr
 from pykrx import stock as krx
 
 from app.domain.market_data.entity import Candle, Stock, Ticker
@@ -25,29 +26,22 @@ _PERIOD_DAYS: dict[str, int] = {
 _stock_cache: Optional[dict[str, tuple[str, str]]] = None
 
 
-def _recent_trading_date() -> str:
-    """가장 최근 평일(거래일 근사치)을 YYYYMMDD 형식으로 반환."""
-    d = date.today()
-    for _ in range(7):
-        if d.weekday() < 5:
-            return d.strftime("%Y%m%d")
-        d -= timedelta(days=1)
-    return d.strftime("%Y%m%d")
-
-
 def _load_stock_cache() -> dict[str, tuple[str, str]]:
-    """KOSPI + KOSDAQ 전체 종목 코드/이름/시장을 한 번 로드해 캐싱."""
+    """KRX 전체 종목 코드/이름/시장을 FinanceDataReader로 로드해 캐싱.
+
+    pykrx의 get_market_ticker_list는 KRX API 변경에 취약하므로
+    안정성이 높은 FinanceDataReader를 사용한다.
+    """
     global _stock_cache
     if _stock_cache is not None:
         return _stock_cache
 
-    today = _recent_trading_date()
-    cache: dict[str, tuple[str, str]] = {}
-    for market in ("KOSPI", "KOSDAQ"):
-        codes = krx.get_market_ticker_list(today, market=market)
-        for code in codes:
-            name = krx.get_market_ticker_name(code)
-            cache[code] = (name, market)
+    df = fdr.StockListing("KRX")
+    cache: dict[str, tuple[str, str]] = {
+        str(row["Code"]): (str(row["Name"]), str(row["Market"]))
+        for _, row in df.iterrows()
+        if row["Code"] and row["Name"]
+    }
     _stock_cache = cache
     return _stock_cache
 
@@ -82,7 +76,7 @@ class PykrxMarketDataRepository:
 
     def _sync_get_candles(self, code: str, period: str, count: int) -> list[Candle]:
         days = _PERIOD_DAYS.get(period, 90)
-        end = date.today()
+        end = date.today() - timedelta(days=1)  # 당일 미확정 데이터 제외
         start = end - timedelta(days=days)
 
         df = krx.get_market_ohlcv(
@@ -116,7 +110,7 @@ class PykrxMarketDataRepository:
         return await loop.run_in_executor(_executor, self._sync_get_ticker, code)
 
     def _sync_get_ticker(self, code: str) -> Ticker:
-        end = date.today()
+        end = date.today() - timedelta(days=1)  # 당일 미확정 데이터 제외
         start = end - timedelta(days=7)
 
         # 현재가는 액면분할 수정 없는 실제 거래가를 사용
