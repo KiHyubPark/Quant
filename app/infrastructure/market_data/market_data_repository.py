@@ -74,8 +74,8 @@ class PykrxMarketDataRepository:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(_executor, self._sync_get_candles, code, period, count)
 
-    def _sync_get_candles(self, code: str, period: str, count: int) -> list[Candle]:
-        days = _PERIOD_DAYS.get(period, 90)
+    def _sync_get_candles(self, code: str, period, count: int) -> list[Candle]:
+        days = _PERIOD_DAYS.get(period.value, 90)
         end = date.today() - timedelta(days=1)  # 당일 미확정 데이터 제외
         start = end - timedelta(days=days)
 

@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from app.domain.market_data.entity import CandlePeriod
+
 
 @dataclass(frozen=True)
 class SearchStocksCommand:
@@ -9,7 +11,7 @@ class SearchStocksCommand:
 @dataclass(frozen=True)
 class GetCandlesCommand:
     code: str
-    period: str = field(default="3mo")  # 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y
+    period: CandlePeriod = field(default=CandlePeriod.THREE_MONTHS)
     count: int = field(default=100)
 
 

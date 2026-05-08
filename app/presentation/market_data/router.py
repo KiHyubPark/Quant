@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.application.market_data.commands import GetCandlesCommand, GetTickerCommand, SearchStocksCommand
 from app.application.market_data.use_cases import MarketDataUseCases
+from app.domain.market_data.entity import CandlePeriod
 from app.domain.market_data.exceptions import StockNotFoundError
 from app.infrastructure.market_data.market_data_repository import PykrxMarketDataRepository
 from app.presentation.market_data.schemas import CandleSchema, StockSchema, TickerSchema
@@ -27,7 +28,7 @@ async def search_stocks(
 @router.get("/stocks/{code}/candles", response_model=list[CandleSchema], summary="캔들(OHLCV) 조회")
 async def get_candles(
     code: str,
-    period: str = Query("3mo", description="조회 기간 (1d / 5d / 1mo / 3mo / 6mo / 1y / 2y / 5y)"),
+    period: CandlePeriod = Query(CandlePeriod.THREE_MONTHS, description="조회 기간"),
     count: int = Query(100, ge=1, le=1000, description="최대 캔들 수"),
     use_cases: MarketDataUseCases = Depends(get_use_cases),
 ):

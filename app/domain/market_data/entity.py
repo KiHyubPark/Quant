@@ -1,5 +1,17 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
+
+
+class CandlePeriod(str, Enum):
+    ONE_DAY    = "1d"
+    FIVE_DAYS  = "5d"
+    ONE_MONTH  = "1mo"
+    THREE_MONTHS = "3mo"
+    SIX_MONTHS = "6mo"
+    ONE_YEAR   = "1y"
+    TWO_YEARS  = "2y"
+    FIVE_YEARS = "5y"
 
 
 @dataclass(frozen=True)
