@@ -3,12 +3,12 @@ from enum import Enum
 from typing import Optional
 
 
-class OrderType(Enum):
+class OrderType(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class OrderStatus(Enum):
+class OrderStatus(str, Enum):
     PENDING = "PENDING"      # 주문 대기
     FILLED = "FILLED"        # 체결 완료
     CANCELLED = "CANCELLED"  # 취소

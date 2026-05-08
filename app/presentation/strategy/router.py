@@ -55,7 +55,7 @@ async def generate_signal(
 ):
     try:
         signal = await use_cases.generate_signal(GenerateSignalCommand(strategy_id=strategy_id, stock_code=code))
-        return {**asdict(signal), "signal_type": signal.signal_type.value}
+        return asdict(signal)
     except StrategyNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

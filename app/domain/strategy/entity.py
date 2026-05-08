@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 
 
-class SignalType(Enum):
+class SignalType(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
     HOLD = "HOLD"

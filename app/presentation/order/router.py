@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.application.order.commands import CancelOrderCommand, PlaceOrderCommand
 from app.application.order.use_cases import OrderUseCases
-from app.domain.order.entity import OrderType
 from app.domain.order.exceptions import OrderCancelFailedError, OrderNotFoundError
 from app.infrastructure.order.order_repository import InMemoryOrderRepository
 from app.presentation.order.schemas import OrderResponseSchema, PlaceOrderSchema, TradeSchema
@@ -20,10 +19,10 @@ def _order_to_dict(order) -> dict:
     return {
         "order_id": order.order_id,
         "stock_code": order.stock_code,
-        "order_type": order.order_type.value,
+        "order_type": order.order_type,
         "quantity": order.quantity,
         "price": order.price,
-        "status": order.status.value,
+        "status": order.status,
         "created_at": order.created_at,
     }
 
@@ -33,7 +32,7 @@ def _trade_to_dict(trade) -> dict:
         "trade_id": trade.trade_id,
         "order_id": trade.order_id,
         "stock_code": trade.stock_code,
-        "order_type": trade.order_type.value,
+        "order_type": trade.order_type,
         "quantity": trade.quantity,
         "price": trade.price,
         "traded_at": trade.traded_at,
@@ -45,15 +44,10 @@ async def place_order(
     body: PlaceOrderSchema,
     use_cases: OrderUseCases = Depends(get_use_cases),
 ):
-    try:
-        order_type = OrderType(body.order_type.upper())
-    except ValueError:
-        raise HTTPException(status_code=422, detail="order_type은 BUY 또는 SELL이어야 합니다.")
-
     order = await use_cases.place(
         PlaceOrderCommand(
             stock_code=body.stock_code,
-            order_type=order_type,
+            order_type=body.order_type,
             quantity=body.quantity,
             price=body.price,
         )
