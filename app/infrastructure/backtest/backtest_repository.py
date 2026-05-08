@@ -4,16 +4,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
-import yfinance as yf
+from pykrx import stock as krx
 
 from app.domain.backtest.entity import BacktestResult, PerformanceMetrics
 from app.domain.backtest.exceptions import BacktestResultNotFoundError
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
-# 연간 거래일 수 (샤프 지수 연환산 기준)
 _TRADING_DAYS_PER_YEAR = 252
-# 무위험 수익률 (연 3.5% 기준, 일간 환산)
 _RISK_FREE_DAILY = 0.035 / _TRADING_DAYS_PER_YEAR
 
 
@@ -24,56 +22,41 @@ def _sync_run_backtest(
     initial_capital: int,
 ) -> dict:
     """
-    yfinance로 OHLCV 데이터를 로드하고
+    pykrx로 OHLCV 데이터를 로드하고
     MA5/MA20 골든크로스 전략으로 백테스트를 실행한다.
-
-    반환값: dict (BacktestResult 생성에 필요한 원시 데이터)
     """
-    ticker_code = f"{stock_code}.KS"
-    start = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
-    end = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+    df: pd.DataFrame = krx.get_market_ohlcv(start_date, end_date, stock_code)
 
-    df: pd.DataFrame = yf.download(ticker_code, start=start, end=end, progress=False)
-
-    if df.empty:
-        # KOSDAQ 재시도
-        ticker_code = f"{stock_code}.KQ"
-        df = yf.download(ticker_code, start=start, end=end, progress=False)
-
-    if df.empty:
+    if df is None or df.empty:
         raise ValueError(f"데이터를 불러올 수 없습니다. (code={stock_code})")
 
-    # Close 컬럼이 MultiIndex인 경우 단일 컬럼으로 변환
-    close: pd.Series = df["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-    close = close.dropna()
+    close: pd.Series = df["종가"].astype(float).dropna()
 
-    # MA5 / MA20 계산
+    if len(close) < 20:
+        raise ValueError(f"백테스트에 필요한 최소 데이터(20일)가 부족합니다. (code={stock_code})")
+
     ma5 = close.rolling(5).mean()
     ma20 = close.rolling(20).mean()
 
-    # 시그널 생성: 골든크로스 → BUY, 데드크로스 → SELL
-    # (NaN을 제거하기 위해 dropna 이후의 인덱스 기준)
     valid = pd.DataFrame({"close": close, "ma5": ma5, "ma20": ma20}).dropna()
 
-    signals = pd.Series(0, index=valid.index)  # 0=HOLD, 1=BUY, -1=SELL
-    prev_above = (valid["ma5"].iloc[0] > valid["ma20"].iloc[0])
+    # 0=HOLD, 1=BUY(골든크로스), -1=SELL(데드크로스)
+    signals = pd.Series(0, index=valid.index)
+    prev_above = valid["ma5"].iloc[0] > valid["ma20"].iloc[0]
     for i in range(1, len(valid)):
         curr_above = valid["ma5"].iloc[i] > valid["ma20"].iloc[i]
         if curr_above and not prev_above:
-            signals.iloc[i] = 1   # 골든크로스
+            signals.iloc[i] = 1
         elif not curr_above and prev_above:
-            signals.iloc[i] = -1  # 데드크로스
+            signals.iloc[i] = -1
         prev_above = curr_above
 
-    # 포지션 시뮬레이션
     cash = float(initial_capital)
     shares = 0
     buy_price = 0.0
     trades: list[dict] = []
 
-    for i, (date, row) in enumerate(valid.iterrows()):
+    for i, (_, row) in enumerate(valid.iterrows()):
         price = float(row["close"])
         sig = signals.iloc[i]
 
@@ -92,37 +75,34 @@ def _sync_run_backtest(
             shares = 0
             buy_price = 0.0
 
-    # 미체결 포지션은 마지막 날 가격으로 청산
     if shares > 0:
         last_price = float(valid["close"].iloc[-1])
         profit = shares * last_price - shares * buy_price
         trades.append({"type": "SELL", "price": last_price, "shares": shares, "profit": profit})
         cash += shares * last_price
-        shares = 0
 
     final_capital = int(cash)
-
-    # PerformanceMetrics 계산
     total_return = (final_capital - initial_capital) / initial_capital * 100
 
-    # 연환산 수익률 (CAGR)
     days = (valid.index[-1] - valid.index[0]).days if len(valid) > 1 else 1
     years = days / 365.0
-    annualized_return = ((final_capital / initial_capital) ** (1 / max(years, 1e-6)) - 1) * 100 if years > 0 else 0.0
+    annualized_return = (
+        ((final_capital / initial_capital) ** (1 / max(years, 1e-6)) - 1) * 100
+        if years > 0
+        else 0.0
+    )
 
-    # 최대 낙폭 (MDD)
     daily_returns = valid["close"].pct_change().dropna()
     cumulative = (1 + daily_returns).cumprod()
     peak = cumulative.cummax()
-    drawdown = (cumulative - peak) / peak
-    max_drawdown = float(drawdown.min() * 100)
+    max_drawdown = float(((cumulative - peak) / peak).min() * 100)
 
-    # 샤프 지수
     excess = daily_returns - _RISK_FREE_DAILY
     std = excess.std()
-    sharpe_ratio = float((excess.mean() / std * math.sqrt(_TRADING_DAYS_PER_YEAR)) if std > 0 else 0.0)
+    sharpe_ratio = float(
+        (excess.mean() / std * math.sqrt(_TRADING_DAYS_PER_YEAR)) if std > 0 else 0.0
+    )
 
-    # 승률
     sell_trades = [t for t in trades if t["type"] == "SELL"]
     total_trades = len(sell_trades)
     win_trades = sum(1 for t in sell_trades if t.get("profit", 0) > 0)
@@ -143,7 +123,7 @@ def _sync_run_backtest(
 
 class PandasBacktestRepository:
     """
-    yfinance + pandas 기반 백테스트 저장소.
+    pykrx + pandas 기반 백테스트 저장소.
     결과는 인메모리 캐시에 저장된다.
     """
 

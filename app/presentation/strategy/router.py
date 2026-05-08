@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.application.strategy.commands import CreateStrategyCommand, GenerateSignalCommand
 from app.application.strategy.use_cases import StrategyUseCases
 from app.domain.strategy.exceptions import StrategyNotFoundError
-from app.infrastructure.market_data.market_data_repository import YFinanceMarketDataRepository
+from app.infrastructure.market_data.market_data_repository import PykrxMarketDataRepository
 from app.infrastructure.strategy.strategy_repository import InMemoryStrategyRepository
 from app.presentation.strategy.schemas import CreateStrategySchema, SignalSchema, StrategySchema
 
 router = APIRouter(prefix="/strategies", tags=["Strategy"])
 
 # 서버 재시작 시 초기화되지 않도록 모듈 레벨에서 싱글턴 유지
-_market_data_repo = YFinanceMarketDataRepository()
+_market_data_repo = PykrxMarketDataRepository()
 _strategy_repo = InMemoryStrategyRepository(_market_data_repo)
 
 

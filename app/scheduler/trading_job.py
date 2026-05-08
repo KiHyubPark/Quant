@@ -19,14 +19,14 @@ from app.application.order.use_cases import OrderUseCases
 from app.application.strategy.use_cases import StrategyUseCases
 from app.domain.order.entity import OrderType
 from app.domain.strategy.entity import SignalType
-from app.infrastructure.market_data.market_data_repository import YFinanceMarketDataRepository
+from app.infrastructure.market_data.market_data_repository import PykrxMarketDataRepository
 from app.infrastructure.order.order_repository import InMemoryOrderRepository
 from app.infrastructure.strategy.strategy_repository import InMemoryStrategyRepository
 
 logger = logging.getLogger(__name__)
 
 # 스케줄러가 사용할 싱글턴 repository
-_market_data_repo = YFinanceMarketDataRepository()
+_market_data_repo = PykrxMarketDataRepository()
 _strategy_repo = InMemoryStrategyRepository(market_data_repo=_market_data_repo)
 _order_repo = InMemoryOrderRepository()
 

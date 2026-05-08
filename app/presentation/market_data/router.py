@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.application.market_data.commands import GetCandlesCommand, GetTickerCommand, SearchStocksCommand
 from app.application.market_data.use_cases import MarketDataUseCases
 from app.domain.market_data.exceptions import StockNotFoundError
-from app.infrastructure.market_data.market_data_repository import YFinanceMarketDataRepository
+from app.infrastructure.market_data.market_data_repository import PykrxMarketDataRepository
 from app.presentation.market_data.schemas import CandleSchema, StockSchema, TickerSchema
 
 router = APIRouter(prefix="/market-data", tags=["Market Data"])
 
 
 def get_use_cases() -> MarketDataUseCases:
-    return MarketDataUseCases(YFinanceMarketDataRepository())
+    return MarketDataUseCases(PykrxMarketDataRepository())
 
 
 @router.get("/stocks/search", response_model=list[StockSchema], summary="종목 검색")
