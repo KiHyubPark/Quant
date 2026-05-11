@@ -1,7 +1,8 @@
+from app.domain.market_data.entity import Candle
 from app.domain.strategy.entity import SignalType
 
 
-def calculate(prices: list[float]) -> tuple[SignalType, str]:
+def calculate(candles: list[Candle]) -> tuple[SignalType, str]:
     """볼린저밴드 20일 기준 상·하단 돌파 판정.
 
     - 종가 < 하단 밴드(MA20 - 2σ) → BUY
@@ -9,9 +10,10 @@ def calculate(prices: list[float]) -> tuple[SignalType, str]:
     - 그 외                        → HOLD
     """
     period = 20
-    if len(prices) < period:
+    if len(candles) < period:
         raise ValueError(f"볼린저밴드 계산을 위해 최소 {period}일치 데이터가 필요합니다.")
 
+    prices = [float(c.close) for c in candles]
     window = prices[-period:]
     ma     = sum(window) / period
     std    = (sum((p - ma) ** 2 for p in window) / period) ** 0.5

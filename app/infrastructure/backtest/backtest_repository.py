@@ -9,8 +9,9 @@ from pykrx import stock as krx
 
 from app.domain.backtest.entity import BacktestResult, PerformanceMetrics
 from app.domain.backtest.exceptions import BacktestResultNotFoundError
+from app.domain.market_data.entity import Candle
 from app.domain.strategy.entity import SignalType, StrategyId
-from app.infrastructure.strategy.calculators import bollinger, golden_cross, rsi
+from app.infrastructure.strategy.calculators import bollinger, golden_cross, orb, rsi
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
@@ -22,6 +23,7 @@ _SIGNAL_CALCULATORS: dict[StrategyId, Callable] = {
     StrategyId.GOLDEN_CROSS: golden_cross.calculate,
     StrategyId.RSI:          rsi.calculate,
     StrategyId.BOLLINGER:    bollinger.calculate,
+    StrategyId.ORB:          orb.calculate,
 }
 
 
@@ -42,14 +44,26 @@ def _sync_run_backtest(
     if len(close) < 20:
         raise ValueError(f"백테스트에 필요한 최소 데이터(20일)가 부족합니다. (code={stock_code})")
 
-    prices = close.tolist()
+    # OHLCV → Candle 리스트로 변환 (calculator 인터페이스 통일)
+    candles: list[Candle] = [
+        Candle(
+            date=dt.strftime("%Y%m%d"),
+            open=int(row["시가"]),
+            high=int(row["고가"]),
+            low=int(row["저가"]),
+            close=int(row["종가"]),
+            volume=int(row["거래량"]),
+        )
+        for dt, row in df.iterrows()
+    ]
+    prices = [float(c.close) for c in candles]
     calc = _SIGNAL_CALCULATORS[strategy_id]
 
     # 날마다 해당 전략의 calculate() 호출로 시그널 생성
     signals: list[SignalType] = []
-    for i in range(len(prices)):
+    for i in range(len(candles)):
         try:
-            signal, _ = calc(prices[: i + 1])
+            signal, _ = calc(candles[: i + 1])
         except ValueError:
             signal = SignalType.HOLD
         signals.append(signal)

@@ -1,7 +1,8 @@
+from app.domain.market_data.entity import Candle
 from app.domain.strategy.entity import SignalType
 
 
-def calculate(prices: list[float]) -> tuple[SignalType, str]:
+def calculate(candles: list[Candle]) -> tuple[SignalType, str]:
     """RSI 14일 기준 과매수/과매도 판정.
 
     - RSI <= 30 → BUY  (과매도)
@@ -9,8 +10,10 @@ def calculate(prices: list[float]) -> tuple[SignalType, str]:
     - 그 외     → HOLD
     """
     period = 14
-    if len(prices) < period + 1:
+    if len(candles) < period + 1:
         raise ValueError(f"RSI 계산을 위해 최소 {period + 1}일치 데이터가 필요합니다.")
+
+    prices = [float(c.close) for c in candles]
 
     deltas = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
     gains  = [d for d in deltas[-period:] if d > 0]

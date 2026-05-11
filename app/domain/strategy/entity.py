@@ -7,6 +7,7 @@ class StrategyId(str, Enum):
     GOLDEN_CROSS = "golden-cross"  # MA5/MA20 골든크로스
     RSI          = "rsi"           # RSI 과매수/과매도
     BOLLINGER    = "bollinger"     # 볼린저밴드 돌파
+    ORB          = "orb"           # Opening Range Breakout (거래량 동반 돌파)
 
 
 class SignalType(str, Enum):

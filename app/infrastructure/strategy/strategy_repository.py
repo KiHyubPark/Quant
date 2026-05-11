@@ -5,7 +5,7 @@ from app.domain.market_data.entity import CandlePeriod
 from app.domain.market_data.repository import MarketDataRepository
 from app.domain.strategy.entity import Signal, SignalType, Strategy, StrategyId
 from app.domain.strategy.exceptions import StrategyNotFoundError
-from app.infrastructure.strategy.calculators import bollinger, golden_cross, rsi
+from app.infrastructure.strategy.calculators import bollinger, golden_cross, orb, rsi
 
 # 기본 제공 전략 목록
 _DEFAULT_STRATEGIES: list[Strategy] = [
@@ -24,6 +24,11 @@ _DEFAULT_STRATEGIES: list[Strategy] = [
         name="볼린저밴드",
         description="종가가 하단 밴드 아래면 BUY, 상단 밴드 위면 SELL",
     ),
+    Strategy(
+        id=StrategyId.ORB,
+        name="Opening Range Breakout",
+        description="전일 고가 돌파 + 거래량 2배 이상이면 BUY (SSRN 2024 단타 전략)",
+    ),
 ]
 
 # 전략 ID → 계산 함수 매핑
@@ -31,6 +36,7 @@ _SIGNAL_CALCULATORS: dict[StrategyId, Callable] = {
     StrategyId.GOLDEN_CROSS: golden_cross.calculate,
     StrategyId.RSI:          rsi.calculate,
     StrategyId.BOLLINGER:    bollinger.calculate,
+    StrategyId.ORB:          orb.calculate,
 }
 
 
@@ -58,10 +64,9 @@ class InMemoryStrategyRepository:
         candles = await self._market_data_repo.get_candles(
             stock_code, period=CandlePeriod.THREE_MONTHS, count=30
         )
-        prices = [float(c.close) for c in candles]
 
         calc = _SIGNAL_CALCULATORS[strategy_id]
-        signal_type, reason = calc(prices)
+        signal_type, reason = calc(candles)
 
         return Signal(
             strategy_id=strategy_id,
