@@ -1,8 +1,10 @@
 from pydantic import BaseModel, Field
 
+from app.domain.strategy.entity import StrategyId
+
 
 class RunBacktestSchema(BaseModel):
-    strategy_id: str
+    strategy_id: StrategyId
     stock_code: str
     start_date: str = Field(..., description="시작일 (YYYYMMDD)")
     end_date: str = Field(..., description="종료일 (YYYYMMDD)")
@@ -20,7 +22,7 @@ class PerformanceMetricsSchema(BaseModel):
 
 class BacktestResultSchema(BaseModel):
     result_id: str
-    strategy_id: str
+    strategy_id: StrategyId
     stock_code: str
     start_date: str
     end_date: str
