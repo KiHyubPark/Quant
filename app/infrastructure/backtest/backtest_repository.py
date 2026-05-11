@@ -194,7 +194,7 @@ class PandasBacktestRepository:
         end_date: str,
         initial_capital: int,
     ) -> BacktestResult:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         raw = await loop.run_in_executor(
             _executor,
             _sync_run_backtest,
