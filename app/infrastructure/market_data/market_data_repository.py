@@ -1,12 +1,12 @@
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
-from typing import Optional
 
 import FinanceDataReader as fdr
 from pykrx import stock as krx
 
-from app.domain.market_data.entity import Candle, Stock, Ticker
+from app.domain.market_data.entity import Candle, CandlePeriod, Stock, Ticker
 from app.domain.market_data.exceptions import StockNotFoundError
 
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -23,7 +23,8 @@ _PERIOD_DAYS: dict[str, int] = {
 }
 
 # {code: (name, market)} 전체 종목 캐시 — 첫 search_stocks 호출 시 1회 로드
-_stock_cache: Optional[dict[str, tuple[str, str]]] = None
+_stock_cache: dict[str, tuple[str, str]] | None = None
+_stock_cache_lock = threading.Lock()
 
 
 def _load_stock_cache() -> dict[str, tuple[str, str]]:
@@ -36,13 +37,15 @@ def _load_stock_cache() -> dict[str, tuple[str, str]]:
     if _stock_cache is not None:
         return _stock_cache
 
-    df = fdr.StockListing("KRX")
-    cache: dict[str, tuple[str, str]] = {
-        str(row["Code"]): (str(row["Name"]), str(row["Market"]))
-        for _, row in df.iterrows()
-        if row["Code"] and row["Name"]
-    }
-    _stock_cache = cache
+    with _stock_cache_lock:
+        if _stock_cache is not None:
+            return _stock_cache
+        df = fdr.StockListing("KRX")
+        _stock_cache = {
+            str(row["Code"]): (str(row["Name"]), str(row["Market"]))
+            for _, row in df.iterrows()
+            if row["Code"] and row["Name"]
+        }
     return _stock_cache
 
 
@@ -54,7 +57,7 @@ class PykrxMarketDataRepository:
     # ------------------------------------------------------------------ #
 
     async def search_stocks(self, keyword: str) -> list[Stock]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._sync_search_stocks, keyword)
 
     def _sync_search_stocks(self, keyword: str) -> list[Stock]:
@@ -71,10 +74,10 @@ class PykrxMarketDataRepository:
     # ------------------------------------------------------------------ #
 
     async def get_candles(self, code: str, period: str, count: int) -> list[Candle]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._sync_get_candles, code, period, count)
 
-    def _sync_get_candles(self, code: str, period, count: int) -> list[Candle]:
+    def _sync_get_candles(self, code: str, period: CandlePeriod, count: int) -> list[Candle]:
         days = _PERIOD_DAYS.get(period.value, 90)
         end = date.today() - timedelta(days=1)  # 당일 미확정 데이터 제외
         start = end - timedelta(days=days)
@@ -106,19 +109,17 @@ class PykrxMarketDataRepository:
     # ------------------------------------------------------------------ #
 
     async def get_ticker(self, code: str) -> Ticker:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(_executor, self._sync_get_ticker, code)
 
     def _sync_get_ticker(self, code: str) -> Ticker:
         end = date.today() - timedelta(days=1)  # 당일 미확정 데이터 제외
         start = end - timedelta(days=7)
 
-        # 현재가는 액면분할 수정 없는 실제 거래가를 사용
         df = krx.get_market_ohlcv(
             start.strftime("%Y%m%d"),
             end.strftime("%Y%m%d"),
             code,
-            adjusted=False,
         )
 
         if df is None or df.empty:
