@@ -1,9 +1,9 @@
 from app.domain.market_data.entity import Candle
 from app.domain.strategy.entity import SignalType
 
-# SSRN 2024 논문 기준 — 거래량 2배 이상일 때 돌파의 유의미성 검증됨
+# 논문은 분봉 기준 RVOL 2배지만, 일봉 적용 시 너무 엄격해 1.5배로 조정
 _VOLUME_LOOKBACK   = 20
-_VOLUME_MULTIPLIER = 2.0
+_VOLUME_MULTIPLIER = 1.5
 
 
 def calculate(candles: list[Candle]) -> tuple[SignalType, str]:
