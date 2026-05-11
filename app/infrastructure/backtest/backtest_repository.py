@@ -2,29 +2,36 @@ import asyncio
 import math
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from typing import Callable
 
 import pandas as pd
 from pykrx import stock as krx
 
 from app.domain.backtest.entity import BacktestResult, PerformanceMetrics
 from app.domain.backtest.exceptions import BacktestResultNotFoundError
+from app.domain.strategy.entity import SignalType, StrategyId
+from app.infrastructure.strategy.calculators import bollinger, golden_cross, rsi
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
 _TRADING_DAYS_PER_YEAR = 252
 _RISK_FREE_DAILY = 0.035 / _TRADING_DAYS_PER_YEAR
 
+# 전략 ID → 계산 함수 매핑
+_SIGNAL_CALCULATORS: dict[StrategyId, Callable] = {
+    StrategyId.GOLDEN_CROSS: golden_cross.calculate,
+    StrategyId.RSI:          rsi.calculate,
+    StrategyId.BOLLINGER:    bollinger.calculate,
+}
+
 
 def _sync_run_backtest(
+    strategy_id: StrategyId,
     stock_code: str,
     start_date: str,
     end_date: str,
     initial_capital: int,
 ) -> dict:
-    """
-    pykrx로 OHLCV 데이터를 로드하고
-    MA5/MA20 골든크로스 전략으로 백테스트를 실행한다.
-    """
     df: pd.DataFrame = krx.get_market_ohlcv(start_date, end_date, stock_code)
 
     if df is None or df.empty:
@@ -35,39 +42,35 @@ def _sync_run_backtest(
     if len(close) < 20:
         raise ValueError(f"백테스트에 필요한 최소 데이터(20일)가 부족합니다. (code={stock_code})")
 
-    ma5 = close.rolling(5).mean()
-    ma20 = close.rolling(20).mean()
+    prices = close.tolist()
+    calc = _SIGNAL_CALCULATORS[strategy_id]
 
-    valid = pd.DataFrame({"close": close, "ma5": ma5, "ma20": ma20}).dropna()
+    # 날마다 해당 전략의 calculate() 호출로 시그널 생성
+    signals: list[SignalType] = []
+    for i in range(len(prices)):
+        try:
+            signal, _ = calc(prices[: i + 1])
+        except ValueError:
+            signal = SignalType.HOLD
+        signals.append(signal)
 
-    # 0=HOLD, 1=BUY(골든크로스), -1=SELL(데드크로스)
-    signals = pd.Series(0, index=valid.index)
-    prev_above = valid["ma5"].iloc[0] > valid["ma20"].iloc[0]
-    for i in range(1, len(valid)):
-        curr_above = valid["ma5"].iloc[i] > valid["ma20"].iloc[i]
-        if curr_above and not prev_above:
-            signals.iloc[i] = 1
-        elif not curr_above and prev_above:
-            signals.iloc[i] = -1
-        prev_above = curr_above
-
+    # 매매 시뮬레이션
     cash = float(initial_capital)
     shares = 0
     buy_price = 0.0
     trades: list[dict] = []
 
-    for i, (_, row) in enumerate(valid.iterrows()):
-        price = float(row["close"])
-        sig = signals.iloc[i]
+    for i, price in enumerate(prices):
+        sig = signals[i]
 
-        if sig == 1 and shares == 0:
+        if sig == SignalType.BUY and shares == 0:
             shares = int(cash // price)
             if shares > 0:
                 buy_price = price
                 cash -= shares * price
                 trades.append({"type": "BUY", "price": price, "shares": shares})
 
-        elif sig == -1 and shares > 0:
+        elif sig == SignalType.SELL and shares > 0:
             sell_value = shares * price
             profit = sell_value - shares * buy_price
             trades.append({"type": "SELL", "price": price, "shares": shares, "profit": profit})
@@ -75,8 +78,9 @@ def _sync_run_backtest(
             shares = 0
             buy_price = 0.0
 
+    # 기간 종료 시 보유 중이면 강제 매도
     if shares > 0:
-        last_price = float(valid["close"].iloc[-1])
+        last_price = prices[-1]
         profit = shares * last_price - shares * buy_price
         trades.append({"type": "SELL", "price": last_price, "shares": shares, "profit": profit})
         cash += shares * last_price
@@ -84,15 +88,14 @@ def _sync_run_backtest(
     final_capital = int(cash)
     total_return = (final_capital - initial_capital) / initial_capital * 100
 
-    days = (valid.index[-1] - valid.index[0]).days if len(valid) > 1 else 1
+    days = (close.index[-1] - close.index[0]).days if len(close) > 1 else 1
     years = days / 365.0
     annualized_return = (
         ((final_capital / initial_capital) ** (1 / max(years, 1e-6)) - 1) * 100
-        if years > 0
-        else 0.0
+        if years > 0 else 0.0
     )
 
-    daily_returns = valid["close"].pct_change().dropna()
+    daily_returns = close.pct_change().dropna()
     cumulative = (1 + daily_returns).cumprod()
     peak = cumulative.cummax()
     max_drawdown = float(((cumulative - peak) / peak).min() * 100)
@@ -122,17 +125,12 @@ def _sync_run_backtest(
 
 
 class PandasBacktestRepository:
-    """
-    pykrx + pandas 기반 백테스트 저장소.
-    결과는 인메모리 캐시에 저장된다.
-    """
-
     def __init__(self) -> None:
         self._cache: dict[str, BacktestResult] = {}
 
     async def run(
         self,
-        strategy_id: str,
+        strategy_id: StrategyId,
         stock_code: str,
         start_date: str,
         end_date: str,
@@ -142,6 +140,7 @@ class PandasBacktestRepository:
         raw = await loop.run_in_executor(
             _executor,
             _sync_run_backtest,
+            strategy_id,
             stock_code,
             start_date,
             end_date,
