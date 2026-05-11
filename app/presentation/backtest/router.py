@@ -1,10 +1,19 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.application.backtest.commands import RunBacktestCommand
 from app.application.backtest.use_cases import BacktestUseCases
 from app.domain.backtest.exceptions import BacktestResultNotFoundError
 from app.infrastructure.backtest.backtest_repository import PandasBacktestRepository
-from app.presentation.backtest.schemas import BacktestResultSchema, RunBacktestSchema
+from app.presentation.backtest.schemas import (
+    BacktestResultSchema,
+    BatchBacktestItemSchema,
+    BatchBacktestSchema,
+    BatchBacktestSummarySchema,
+    RunBacktestBatchSchema,
+    RunBacktestSchema,
+)
 
 router = APIRouter(prefix="/backtest", tags=["Backtest"])
 
@@ -65,3 +74,62 @@ async def get_result(
         return _result_to_dict(result)
     except BacktestResultNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/run-batch",
+    response_model=BatchBacktestSchema,
+    status_code=201,
+    summary="여러 종목 동시 백테스트",
+)
+async def run_backtest_batch(
+    body: RunBacktestBatchSchema,
+    use_cases: BacktestUseCases = Depends(get_use_cases),
+):
+    """주어진 전략으로 여러 종목을 한 번에 백테스트하고 비교 요약을 반환한다."""
+
+    async def _run_one(code: str) -> BatchBacktestItemSchema:
+        try:
+            result = await use_cases.run(
+                RunBacktestCommand(
+                    strategy_id=body.strategy_id,
+                    stock_code=code,
+                    start_date=body.start_date,
+                    end_date=body.end_date,
+                    initial_capital=body.initial_capital,
+                )
+            )
+            return BatchBacktestItemSchema(
+                stock_code=code,
+                success=True,
+                result=_result_to_dict(result),
+            )
+        except (ValueError, Exception) as e:
+            return BatchBacktestItemSchema(stock_code=code, success=False, error=str(e))
+
+    items = await asyncio.gather(*(_run_one(c) for c in body.stock_codes))
+
+    successful = [it for it in items if it.success and it.result is not None]
+    if not successful:
+        raise HTTPException(status_code=422, detail="모든 종목 백테스트에 실패했습니다.")
+
+    metrics    = [it.result.metrics for it in successful]
+    avg_return = sum(m.total_return for m in metrics) / len(metrics)
+    avg_win    = sum(m.win_rate for m in metrics) / len(metrics)
+    avg_trades = sum(m.total_trades for m in metrics) / len(metrics)
+
+    best_idx  = max(range(len(successful)), key=lambda i: successful[i].result.metrics.total_return)
+    worst_idx = min(range(len(successful)), key=lambda i: successful[i].result.metrics.total_return)
+
+    return BatchBacktestSchema(
+        summary=BatchBacktestSummarySchema(
+            strategy_id=body.strategy_id,
+            total_stocks=len(successful),
+            avg_return=round(avg_return, 2),
+            avg_win_rate=round(avg_win, 2),
+            avg_trades=round(avg_trades, 2),
+            best_stock=successful[best_idx].stock_code,
+            worst_stock=successful[worst_idx].stock_code,
+        ),
+        items=items,
+    )
