@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.application.strategy.commands import CreateStrategyCommand, GenerateSignalCommand
 from app.application.strategy.use_cases import StrategyUseCases
+from app.domain.strategy.entity import StrategyId
 from app.domain.strategy.exceptions import StrategyNotFoundError
 from app.infrastructure.market_data.market_data_repository import PykrxMarketDataRepository
 from app.infrastructure.strategy.strategy_repository import InMemoryStrategyRepository
@@ -28,7 +29,7 @@ async def list_strategies(use_cases: StrategyUseCases = Depends(get_use_cases)):
 
 @router.get("/{strategy_id}", response_model=StrategySchema, summary="전략 단건 조회")
 async def get_strategy(
-    strategy_id: str,
+    strategy_id: StrategyId,
     use_cases: StrategyUseCases = Depends(get_use_cases),
 ):
     try:
@@ -49,7 +50,7 @@ async def create_strategy(
 
 @router.get("/{strategy_id}/signal", response_model=SignalSchema, summary="매매 시그널 생성")
 async def generate_signal(
-    strategy_id: str,
+    strategy_id: StrategyId,
     code: str = Query(..., description="종목 코드 (예: 005930)"),
     use_cases: StrategyUseCases = Depends(get_use_cases),
 ):

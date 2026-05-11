@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from app.domain.strategy.entity import StrategyId
+
 
 @dataclass(frozen=True)
 class CreateStrategyCommand:
@@ -9,5 +11,5 @@ class CreateStrategyCommand:
 
 @dataclass(frozen=True)
 class GenerateSignalCommand:
-    strategy_id: str
+    strategy_id: StrategyId
     stock_code: str

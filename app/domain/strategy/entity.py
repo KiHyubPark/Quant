@@ -3,6 +3,12 @@ from enum import Enum
 from typing import Optional
 
 
+class StrategyId(str, Enum):
+    GOLDEN_CROSS = "golden-cross"  # MA5/MA20 골든크로스
+    RSI          = "rsi"           # RSI 과매수/과매도
+    BOLLINGER    = "bollinger"     # 볼린저밴드 돌파
+
+
 class SignalType(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
@@ -12,8 +18,8 @@ class SignalType(str, Enum):
 @dataclass(frozen=True)
 class Strategy:
     """매매 전략 정의"""
-    id: str
-    name: str        # 전략명 (예: 골든크로스)
+    id: StrategyId
+    name: str
     description: str
 
 
