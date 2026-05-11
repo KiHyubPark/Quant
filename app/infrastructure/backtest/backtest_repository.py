@@ -92,6 +92,8 @@ def _sync_run_backtest(
     hold_count = 0  # 강제 매도까지 남은 일수 (0 = 비활성)
     trades: list[dict] = []
     forced_hold_days = _HOLD_DAYS.get(strategy_id, 0)
+    # 포트폴리오 일별 가치 추적 (MDD·샤프 계산용)
+    portfolio_values: list[float] = [float(initial_capital)]
 
     for i in range(len(candles) - 1):
         sig = signals[i]
@@ -109,6 +111,7 @@ def _sync_run_backtest(
                 cash += net
                 shares = 0
                 buy_price = 0.0
+                portfolio_values.append(cash)  # 매도 완료 후 현금만 보유
                 continue
 
         # 매수 (다음날 시가)
@@ -134,6 +137,9 @@ def _sync_run_backtest(
             shares = 0
             buy_price = 0.0
 
+        # 당일 종가 기준 포트폴리오 가치 기록 (현금 + 보유 주식 평가액)
+        portfolio_values.append(cash + shares * float(exec_candle.close))
+
     # 기간 종료 시 보유 중이면 마지막 종가로 강제 매도
     if shares > 0:
         last_price = float(candles[-1].close)
@@ -153,13 +159,16 @@ def _sync_run_backtest(
         if years > 0 else 0.0
     )
 
-    daily_returns = close.pct_change().dropna()
-    cumulative = (1 + daily_returns).cumprod()
-    peak = cumulative.cummax()
-    max_drawdown = float(((cumulative - peak) / peak).min() * 100)
+    # MDD·샤프: 종목 수익률이 아닌 전략 포트폴리오 일별 수익률 기준
+    port_series  = pd.Series(portfolio_values)
+    port_returns = port_series.pct_change().dropna()
 
-    excess = daily_returns - _RISK_FREE_DAILY
-    std = excess.std()
+    cumulative   = (1 + port_returns).cumprod()
+    peak         = cumulative.cummax()
+    max_drawdown = float(((cumulative - peak) / peak).min() * 100) if len(cumulative) > 0 else 0.0
+
+    excess = port_returns - _RISK_FREE_DAILY
+    std    = excess.std()
     sharpe_ratio = float(
         (excess.mean() / std * math.sqrt(_TRADING_DAYS_PER_YEAR)) if std > 0 else 0.0
     )
